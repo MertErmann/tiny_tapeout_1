@@ -44,6 +44,7 @@ assign uio_oe  = 8'b1111_1010;   // 0=in: bits 0,2; 1=out: bits 1,3,4,5,6,7
 // --------------------------------------------------------------------------
 wire        uart_rx_line  = uio_in[0];
 wire        sample_valid  = uio_in[2];
+wire signed [7:0] sample_in_s = $signed(ui_in); // explicit signed wire for fir port
 
 wire [7:0]  uart_data;
 wire        uart_valid;
@@ -52,7 +53,7 @@ wire signed [7:0] coeff0, coeff1, coeff2, coeff3;
 wire        coeff_we;
 
 wire        out_valid;
-wire signed [7:0] filtered_out;
+wire [7:0]  filtered_out;         // matches fir_filter output reg [7:0] (unsigned bits)
 
 // --------------------------------------------------------------------------
 // UART Receiver
@@ -94,7 +95,7 @@ fir_filter u_fir (
     .coeff2       (coeff2),
     .coeff3       (coeff3),
     .sample_valid (sample_valid),
-    .sample_in    ($signed(ui_in)),
+    .sample_in    (sample_in_s),
     .out_valid    (out_valid),
     .filtered_out (filtered_out)
 );
