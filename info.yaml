@@ -1,9 +1,9 @@
 # Tiny Tapeout project information
 project:
-  title:        "UART-Programmable 4-Tap FIR Filter"
+  title:        "UART-Programmable 2-Tap FIR Filter"
   author:       "Mert Erman"
   discord:      ""
-  description:  "4-tap direct-form FIR filter with runtime-configurable Q7 coefficients via UART 9600 8N1. 8-bit signed input/output with saturation."
+  description:  "2-tap direct-form FIR filter with runtime-configurable Q7 coefficients via UART 9600 8N1. 8-bit signed input/output with saturation."
   language:     "Verilog"
   clock_hz:     25000000
 
