@@ -11,13 +11,11 @@ def signed8(val: int) -> int:
     return val if val < 128 else val - 256
 
 async def push_sample(dut, sample: int) -> int:
-    """Drive ui_in + strobe sample_valid; return signed filtered output.
-    The time-multiplexed FIR takes 4 MAC cycles + pipeline → wait 6 clocks."""
     dut.ui_in.value  = sample & 0xFF
     dut.uio_in.value = 0x05   # bit0=1 (UART RX idle HIGH), bit2=1 (sample_valid)
     await ClockCycles(dut.clk, 1)
     dut.uio_in.value = 0x01   # deassert sample_valid, keep UART idle
-    await ClockCycles(dut.clk, 6)
+    await ClockCycles(dut.clk, 1)
     return signed8(int(dut.uo_out.value))
 
 

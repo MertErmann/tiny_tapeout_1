@@ -1,12 +1,3 @@
-// fir_filter.v -- 4-Tap FIR Filter (Time-Multiplexed Single Multiplier)
-//
-// One 8x8 signed multiplier shared across 4 MAC cycles.
-// Coefficients: 8-bit signed Q7 (0x40 = +0.5)
-// Input/output: 8-bit signed Q0 (-128..+127) with saturation.
-//
-// Latency: 4 clock cycles after sample_valid.
-// Delay line shifts AFTER all taps computed (preserves correct x[n-k] values).
-
 `default_nettype none
 
 module fir_filter (
@@ -25,80 +16,44 @@ module fir_filter (
     output reg  [7:0]  filtered_out
 );
 
-// Delay line (shifted after computation, NOT at sample capture)
+// Delay line
 reg signed [7:0] d1, d2, d3;
-reg signed [7:0] cur_sample;
 
-// MAC state
-reg [1:0]         tap;
-reg               active;
-reg signed [17:0] acc;
+// Multipliers (4 parallel MACs)
+wire signed [15:0] p0 = $signed(coeff0) * $signed(sample_in);
+wire signed [15:0] p1 = $signed(coeff1) * $signed(d1);
+wire signed [15:0] p2 = $signed(coeff2) * $signed(d2);
+wire signed [15:0] p3 = $signed(coeff3) * $signed(d3);
 
-// Coefficient / data mux (combinational)
-reg signed [7:0] mux_c;
-reg signed [7:0] mux_d;
+// Accumulator (Sign extended 16->18 bits using $signed)
+wire signed [17:0] sum = $signed(p0) + $signed(p1) + $signed(p2) + $signed(p3);
 
-always @(*) begin
-    case (tap)
-        2'd0: begin mux_c = coeff0; mux_d = cur_sample; end
-        2'd1: begin mux_c = coeff1; mux_d = d1;         end
-        2'd2: begin mux_c = coeff2; mux_d = d2;         end
-        default: begin mux_c = coeff3; mux_d = d3;      end
-    endcase
-end
+// Q7 Shift
+wire signed [17:0] shifted = sum >>> 7;
 
-// Single 8x8 signed multiplier
-wire signed [15:0] product = $signed(mux_c) * $signed(mux_d);
+// Saturation to 8-bit unsigned port (with signed logic)
+wire [7:0] sat_out = (shifted >  18'sd127) ? 8'h7F :
+                     (shifted < -18'sd128) ? 8'h80 :
+                                             shifted[7:0];
 
-// Sign-extend 16->18 bits using $signed (NOT concat -- concat is always unsigned
-// and would cause Yosys assertion: arg->is_signed != sig.is_signed)
-wire signed [17:0] product_ext = $signed(product);
-
-// Final-tap combinational result (used when tap==3)
-wire signed [17:0] final_sum   = $signed(acc) + $signed(product_ext);
-wire signed [17:0] final_shift = $signed(final_sum) >>> 7;
-
-// Saturate to [-128, +127] -- output is plain [7:0] bits (signed interpretation at top)
-wire [7:0] sat_out = ($signed(final_shift) >  18'sd127) ? 8'h7F :
-                     ($signed(final_shift) < -18'sd128) ? 8'h80 :
-                                                          final_shift[7:0];
-
-// Main FSM
 always @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
         d1           <= 8'h0;
         d2           <= 8'h0;
         d3           <= 8'h0;
-        cur_sample   <= 8'h0;
-        acc          <= 18'h0;
-        tap          <= 2'd0;
-        active       <= 1'b0;
         out_valid    <= 1'b0;
         filtered_out <= 8'h0;
     end else begin
-        out_valid <= 1'b0;
+        out_valid <= sample_valid;
 
-        if (!active) begin
-            if (sample_valid) begin
-                cur_sample <= sample_in;
-                acc        <= 18'h0;
-                tap        <= 2'd0;
-                active     <= 1'b1;
-            end
-        end else begin
-            acc <= $signed(acc) + $signed(product_ext);
+        if (sample_valid) begin
+            // Shift delay line
+            d1 <= sample_in;
+            d2 <= d1;
+            d3 <= d2;
 
-            if (tap == 2'd3) begin
-                filtered_out <= sat_out;
-                out_valid    <= 1'b1;
-                active       <= 1'b0;
-                tap          <= 2'd0;
-                d1 <= cur_sample;
-                d2 <= d1;
-                d3 <= d2;
-            end else begin
-                tap <= tap + 2'd1;
-            end
+            // Output result (combinational -> reg)
+            filtered_out <= sat_out;
         end
     end
 end
