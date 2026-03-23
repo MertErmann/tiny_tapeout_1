@@ -1,16 +1,11 @@
 // fir_filter.v -- 4-Tap FIR Filter (Time-Multiplexed Single Multiplier)
 //
-// Uses ONE shared 8x8 multiplier over 4 MAC cycles.
-// Coefficient format: 8-bit signed Q7 (0x40 = +0.5, 0x7F ~ +1.0)
-// Sample/output: 8-bit signed Q0 (-128..+127), saturated
+// One 8x8 signed multiplier shared across 4 MAC cycles.
+// Coefficients: 8-bit signed Q7 (0x40 = +0.5)
+// Input/output: 8-bit signed Q0 (-128..+127) with saturation.
 //
-// Timeline (N = cycle sample_valid is asserted):
-//   N   : latch sample, reset accumulator, tap=0
-//   N+1 : acc += c0 * x[n]
-//   N+2 : acc += c1 * x[n-1]
-//   N+3 : acc += c2 * x[n-2]
-//   N+4 : acc += c3 * x[n-3], right-shift >>7, saturate, out_valid pulses
-//   N+5 : delay line shifts, ready for next sample
+// Latency: 4 clock cycles after sample_valid.
+// Delay line shifts AFTER all taps computed (preserves correct x[n-k] values).
 
 `default_nettype none
 
@@ -27,44 +22,46 @@ module fir_filter (
     input  wire signed [7:0] sample_in,
 
     output reg         out_valid,
-    output reg  signed [7:0] filtered_out
+    output reg  [7:0]  filtered_out
 );
 
-// Delay line (shifted AFTER computation)
+// Delay line (shifted after computation, NOT at sample capture)
 reg signed [7:0] d1, d2, d3;
 reg signed [7:0] cur_sample;
 
-// Tap FSM
-reg [1:0]        tap;
-reg              active;
-reg signed [17:0] acc;   // 18-bit: holds 4 x (127 x 127) = 64516 < 2^17
+// MAC state
+reg [1:0]         tap;
+reg               active;
+reg signed [17:0] acc;
 
-// Coefficient/data mux (combinational)
-reg signed [7:0] mux_coeff;
-reg signed [7:0] mux_data;
+// Coefficient / data mux (combinational)
+reg signed [7:0] mux_c;
+reg signed [7:0] mux_d;
 
 always @(*) begin
     case (tap)
-        2'd0: begin mux_coeff = coeff0; mux_data = cur_sample; end
-        2'd1: begin mux_coeff = coeff1; mux_data = d1;         end
-        2'd2: begin mux_coeff = coeff2; mux_data = d2;         end
-        default: begin mux_coeff = coeff3; mux_data = d3;      end
+        2'd0: begin mux_c = coeff0; mux_d = cur_sample; end
+        2'd1: begin mux_c = coeff1; mux_d = d1;         end
+        2'd2: begin mux_c = coeff2; mux_d = d2;         end
+        default: begin mux_c = coeff3; mux_d = d3;      end
     endcase
 end
 
-// Single shared multiplier
-wire signed [15:0] product = mux_coeff * mux_data;
-// Sign-extend to 18 bits
-wire signed [17:0] product_ext = {{2{product[15]}}, product};
+// Single 8x8 signed multiplier
+wire signed [15:0] product = $signed(mux_c) * $signed(mux_d);
 
-// Saturation after Q7 right-shift
-// final_val = (acc + product_ext) >>> 7
-// Clamp to [-128, +127]
-wire signed [17:0] raw_sum = acc + product_ext;
-wire signed [17:0] shifted = $signed(raw_sum) >>> 7;
-wire signed [7:0]  clamped = (shifted > 18'sd127)  ? 8'h7F :
-                              (shifted < -18'sd128) ? 8'h80 :
-                                                      shifted[7:0];
+// Sign-extend 16->18 bits using $signed (NOT concat -- concat is always unsigned
+// and would cause Yosys assertion: arg->is_signed != sig.is_signed)
+wire signed [17:0] product_ext = $signed(product);
+
+// Final-tap combinational result (used when tap==3)
+wire signed [17:0] final_sum   = $signed(acc) + $signed(product_ext);
+wire signed [17:0] final_shift = $signed(final_sum) >>> 7;
+
+// Saturate to [-128, +127] -- output is plain [7:0] bits (signed interpretation at top)
+wire [7:0] sat_out = ($signed(final_shift) >  18'sd127) ? 8'h7F :
+                     ($signed(final_shift) < -18'sd128) ? 8'h80 :
+                                                          final_shift[7:0];
 
 // Main FSM
 always @(posedge clk or negedge rst_n) begin
@@ -89,15 +86,13 @@ always @(posedge clk or negedge rst_n) begin
                 active     <= 1'b1;
             end
         end else begin
-            acc <= acc + product_ext;
+            acc <= $signed(acc) + $signed(product_ext);
 
             if (tap == 2'd3) begin
-                // Final tap: compute output, shift delay line, return to idle
-                filtered_out <= clamped;
+                filtered_out <= sat_out;
                 out_valid    <= 1'b1;
                 active       <= 1'b0;
                 tap          <= 2'd0;
-                // Shift delay line AFTER all taps computed
                 d1 <= cur_sample;
                 d2 <= d1;
                 d3 <= d2;
