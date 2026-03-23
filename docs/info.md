@@ -1,16 +1,17 @@
-# UART-Programmable 4-Tap FIR Filter
+# UART-Programmable 2-Tap FIR Filter
 
 ## How it works
 
-This design implements a **4-tap direct-form FIR filter** with runtime-configurable coefficients.
+This design implements a **2-tap direct-form FIR filter** with runtime-configurable coefficients.
 
 ### Coefficient Loading (UART)
 
 Send a 5-byte packet at **9600 baud, 8N1** on `uio[0]`:
 
-```
+```text
 [ 0xA5 ] [ c0 ] [ c1 ] [ c2 ] [ c3 ]
 ```
+*(Note: To fit in a 1x1 footprint, `c2` and `c3` are ignored by the filter, but they must still be sent to complete the UART packet protocol.)*
 
 Coefficients are **8-bit signed Q7 fixed-point** (divide by 128 to get the real value):
 
@@ -29,13 +30,13 @@ Default coefficients at reset: all `0x40` (+0.5) — box / moving-average filter
 
 1. Place 8-bit signed sample on `ui_in[7:0]`
 2. Pulse `uio[2]` (sample_valid) HIGH for ≥1 clock cycle
-3. Wait 2 clock cycles
+3. Wait 1 clock cycle
 4. Read result from `uo_out[7:0]` when `uio[3]` (out_valid) pulses HIGH
 
 ### Filter equation
 
-```
-y[n] = (c0*x[n] + c1*x[n-1] + c2*x[n-2] + c3*x[n-3]) >> 7
+```text
+y[n] = (c0*x[n] + c1*x[n-1]) >> 7
 ```
 
 Output is saturated to [-128, +127].
@@ -53,9 +54,8 @@ def q7(v):
 def load(c0, c1, c2, c3):
     ser.write(bytes([0xA5, q7(c0), q7(c1), q7(c2), q7(c3)]))
 
-load(0.25,  0.25,  0.25,  0.25)   # Low-pass (box)
+load(0.5,   0.5,   0.0,   0.0)    # Low-pass (box)
 load(0.5,  -0.5,   0.0,   0.0)    # High-pass
-load(0.25, -0.5,   0.25,  0.0)    # Band-pass approximation
 ```
 
 ## How to test
