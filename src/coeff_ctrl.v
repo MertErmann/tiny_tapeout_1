@@ -28,8 +28,8 @@ module coeff_ctrl (
     // Coefficient outputs (registered, stable between writes)
     output reg  signed [7:0] coeff0,
     output reg  signed [7:0] coeff1,
-    output reg  signed [7:0] coeff2,
-    output reg  signed [7:0] coeff3,
+    output wire signed [7:0] coeff2,
+    output wire signed [7:0] coeff3,
 
     // Write-enable strobe (1 clk pulse when new coefficients are loaded)
     output reg         coeff_we
@@ -46,7 +46,11 @@ localparam S_C3     = 3'd4;
 
 reg [2:0] state;
 // Staging registers — hold partial packet until fully received
-reg signed [7:0] c0_buf, c1_buf, c2_buf;
+reg signed [7:0] c0_buf, c1_buf;
+
+// Unused coefficients tied to 0 to save flip-flops
+assign coeff2 = 8'h0;
+assign coeff3 = 8'h0;
 
 always @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
@@ -54,11 +58,8 @@ always @(posedge clk or negedge rst_n) begin
         coeff_we <= 1'b0;
         coeff0   <= 8'sh40;  // default: low-pass box, all 0.5
         coeff1   <= 8'sh40;
-        coeff2   <= 8'sh40;
-        coeff3   <= 8'sh40;
         c0_buf   <= 8'h0;
         c1_buf   <= 8'h0;
-        c2_buf   <= 8'h0;
     end else begin
         coeff_we <= 1'b0;   // default deassert
 
@@ -81,7 +82,7 @@ always @(posedge clk or negedge rst_n) begin
                 end
 
                 S_C2: begin
-                    c2_buf <= rx_data;
+                    // c2 ignored to save area
                     state  <= S_C3;
                 end
 
@@ -89,8 +90,7 @@ always @(posedge clk or negedge rst_n) begin
                     // Full packet received — commit atomically
                     coeff0   <= c0_buf;
                     coeff1   <= c1_buf;
-                    coeff2   <= c2_buf;
-                    coeff3   <= rx_data;
+                    // c3 ignored to save area
                     coeff_we <= 1'b1;
                     state    <= S_HEADER;
                 end

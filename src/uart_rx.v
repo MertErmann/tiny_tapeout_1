@@ -37,7 +37,7 @@ localparam DATA  = 2'd2;
 localparam STOP  = 2'd3;
 
 reg [1:0]  state;
-reg [31:0] baud_cnt;     // baud rate counter (matches 32-bit DIVISOR)
+reg [15:0] baud_cnt;     // 16-bit counter saves area (DIVISOR 2604 < 65535)
 reg [2:0]  bit_idx;      // which data bit we're receiving
 reg [7:0]  shift_reg;    // incoming bits shift in here
 

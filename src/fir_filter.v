@@ -16,6 +16,9 @@ module fir_filter (
     output reg  [7:0]  filtered_out
 );
 
+// Prevent unused signal warnings for discarded coefficients
+wire _unused = &{coeff2, coeff3};
+
 // Delay line (only 1 needed for 2-tap)
 reg signed [7:0] d1;
 
@@ -23,9 +26,12 @@ reg signed [7:0] d1;
 wire signed [15:0] p0 = $signed(coeff0) * $signed(sample_in);
 wire signed [15:0] p1 = $signed(coeff1) * $signed(d1);
 
-// Accumulator (Sign extended 16->18 bits using $signed)
-// Only sum p0 and p1 
-wire signed [17:0] sum = $signed(p0) + $signed(p1);
+// Explicit sign extension to avoid WIDTHEXPAND warnings
+wire signed [17:0] p0_ext = p0;
+wire signed [17:0] p1_ext = p1;
+
+// Accumulator
+wire signed [17:0] sum = p0_ext + p1_ext;
 
 // Q7 Shift
 wire signed [17:0] shifted = sum >>> 7;
