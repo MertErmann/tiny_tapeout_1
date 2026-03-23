@@ -38,24 +38,27 @@ async def test_project(dut):
     await ClockCycles(dut.clk, 5)
 
     # ── Box filter (default coefficients: all 0x40 = +0.5 Q7) ───────────────
-    # y[n] = (0.5*x[n] + 0.5*x[n-1] + 0.5*x[n-2] + 0.5*x[n-3]) (saturated)
-    dut._log.info("Test: default box filter")
+    # y[n] = (0.5*x[n] + 0.5*x[n-1]) (saturated)
+    dut._log.info("Test: default box filter (2-tap)")
 
     out = await push_sample(dut, 64)
+    # x = [..., 0, 64], y = 0.5*64 = 32
     assert out == 32, f"step1: expected 32, got {out}"
     dut._log.info(f"  step1 PASS: got {out}")
 
     out = await push_sample(dut, 64)
+    # x = [..., 64, 64], y = 0.5*64 + 0.5*64 = 64
     assert out == 64, f"step2: expected 64, got {out}"
     dut._log.info(f"  step2 PASS: got {out}")
 
     out = await push_sample(dut, 64)
-    assert out == 96, f"step3: expected 96, got {out}"
+    # x = [..., 64, 64], y = 64
+    assert out == 64, f"step3: expected 64, got {out}"
     dut._log.info(f"  step3 PASS: got {out}")
 
     # ── Zero input → zero output ─────────────────────────────────────────────
     dut._log.info("Test: zero input")
-    for _ in range(4):
+    for _ in range(2):
         await push_sample(dut, 0)
     out = await push_sample(dut, 0)
     assert out == 0, f"zero: expected 0, got {out}"
